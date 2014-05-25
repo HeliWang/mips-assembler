@@ -7,6 +7,7 @@
 #include <map>
 // Use only the neeeded aspects of each namespace
 using std::string;
+using std::map;
 using std::vector;
 using std::endl;
 using std::cerr;
@@ -38,7 +39,7 @@ void printMipsInstruction(int instr) {
     cout << c;
 }
 
-void populateLabelMap(std::map<string, int> &labelMap, vector< vector<Token*> > &tokLines) {
+void populateLabelMap(map<string, int> &labelMap, vector< vector<Token*> > &tokLines) {
     int lineNum = 0;
     
     vector<vector<Token*> >::iterator it;
@@ -56,22 +57,20 @@ void populateLabelMap(std::map<string, int> &labelMap, vector< vector<Token*> > 
               
           } else {
               //is a label
-              
+
               string label = (*it2)->getLexeme(); //remove trailing colon
               label = label.substr(0, label.length()-1);
+
+              //something before it is NOT a label
+              if (!nullLine) {
+                  throw string("ERROR: incorrect label location for label: " + label);
+              }
 
               //Labels can only be defined once
               if (labelMap.find(label) == labelMap.end()) {
                   labelMap[label] = lineNum;
               } else {
-                  throw string("ERROR: Duplicate label definition");
-              }
-
-              if (it2 > it->begin()) {
-                  //throw exception if the thing before it is an integer
-                  if ( (*(it2-1))->getKind() == ASM::INT ) {
-                      throw string("ERROR: Not a proper label, must not have leading numbers");
-                  }
+                  throw string("ERROR: Duplicate label definition: "+ label);
               }
 
               //erase the label, and get next element
@@ -104,7 +103,7 @@ int main(int argc, char* argv[]){
 
     // map of labels to line number
 
-    std::map<string, int> labelMap;
+    map<string, int> labelMap;
     populateLabelMap(labelMap, tokLines);
 
     int lineNum = 0;
