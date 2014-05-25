@@ -28,11 +28,11 @@ public:
 void printMipsInstruction(int instr) {
     char c = instr >> 24; // first 8 bits
     cout << c;
-    char c = instr >> 16; // first 8 bits
+    c = instr >> 16; // first 8 bits
     cout << c;
-    char c = instr >> 8; // first 8 bits
+    c = instr >> 8; // first 8 bits
     cout << c;
-    char c = instr; // first 8 bits
+    c = instr; // first 8 bits
     cout << c;
 }
 
