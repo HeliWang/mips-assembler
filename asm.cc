@@ -44,7 +44,7 @@ void populateLabelMap(map<string, int> &labelMap, vector< vector<Token*> > &tokL
     
     vector<vector<Token*> >::iterator it;
     // through lines
-    for(it = tokLines.begin(); it != tokLines.end(); ++it)
+    for(it = tokLines.begin(); it != tokLines.end(); )
     {
       vector<Token*>::iterator it2;
       bool nullLine = true;
@@ -78,9 +78,10 @@ void populateLabelMap(map<string, int> &labelMap, vector< vector<Token*> > &tokL
           }
       }
 
-      // remove empty line
       if (it->size() == 0) {
-          tokLines.erase(it);
+          it = tokLines.erase(it);
+      } else {
+          ++ it;
       }
 
       if (!nullLine)
@@ -88,10 +89,10 @@ void populateLabelMap(map<string, int> &labelMap, vector< vector<Token*> > &tokL
     }
 }
 
-// add, sub, slt, sltu
+// 3 params : add, sub, slt, sltu 
 void verifyRTypeInstruction(vector<vector<Token*> >::iterator &it,
-  vector<Token*>::iterator &it2) {
-
+                            vector<Token*>::iterator &it2)
+{
   if (it->end() - it2 != 6)
       throw string("ERROR! R type instruction has 3 arguments");
 
@@ -105,13 +106,29 @@ void verifyRTypeInstruction(vector<vector<Token*> >::iterator &it,
       throw string("ERROR! parameters must be registers");
 }
 
-// jr, jalr
+
+// 2 params : mult, multu, div, and divu
+void verifyRTypeInstructionTwoParams(vector<vector<Token*> >::iterator &it,
+                            vector<Token*>::iterator &it2)
+{
+  if (it->end() - it2 != 4)
+      throw string("ERROR! R type instruction has 3 arguments");
+
+  // verify the next 3 params are registers
+  if (!( (*(it2+1))->getKind() == ASM::REGISTER
+         && (*(it2+2))->getKind() == ASM::COMMA
+         && (*(it2+3))->getKind() == ASM::REGISTER
+          ) )
+      throw string("ERROR! parameters must be registers");
+}
+
+// jr, jalr + mfhi, mflo, lis
 void verifyJTypeInstruction(vector<vector<Token*> >::iterator &it,
   vector<Token*>::iterator &it2) {
   if (it->end() - it2 != 2)
       throw string("ERROR! Invalid number of arguments");
-  ++ it2;
-  if ((*it2)->getKind() != ASM::REGISTER)
+
+  if ((*(it2+1))->getKind() != ASM::REGISTER)
       throw string("ERROR! Must give register as param");
 }
 
@@ -144,6 +161,28 @@ int getLabelPositionFromMap (map<string, int> &labelMap, const string &value) {
     }
         
     throw string("ERROR! Invalid Label");
+}
+
+int getBranchOffset (vector<Token*>::iterator &tokenIt, map<string, int> &labelMap, int lineNum) {
+    int bValue = -1;
+    if ( (*(tokenIt+5))->getKind() == ASM::ID )
+    {
+        bValue = getLabelPositionFromMap(labelMap, (*(tokenIt+5))->getLexeme());
+        bValue = (bValue - lineNum -4)/4;
+
+        if (bValue < -32768 || bValue > 32767)
+            throw string("ERROR! Offset must be in range[-32768, 32767]");
+    } 
+    else
+    {
+        bValue = (*(tokenIt+5))->toInt();
+        if ( 
+            ((*(tokenIt+5))->getKind()==ASM::INT && (bValue < -32768 || bValue > 32767)) ||
+            ((*(tokenIt+5))->getKind()==ASM::HEXINT && (bValue > 0xffff || bValue < 0))
+            )
+            throw string("ERROR! Offset must be in range[-32768, 32767]");
+    }
+    return bValue;
 }
 
 int main(int argc, char* argv[]){
@@ -201,11 +240,9 @@ int main(int argc, char* argv[]){
                   std::map<string,int>::iterator mapit;
                   mapit = labelMap.find( (*it2)->getLexeme() );
 
-                  cerr << (*it2)->getLexeme() << endl;
-                  
                   if (mapit != labelMap.end()) {
                       int wordValue = mapit->second;
-                      cerr << wordValue << endl;
+
                       printMipsInstruction(wordValue);
                   } else {
                       throw string("ERROR: .word has invalid parameter");
@@ -223,6 +260,7 @@ int main(int argc, char* argv[]){
               if ( (*it2)->getLexeme() == "jr")
               {
                   verifyJTypeInstruction(it, it2);
+                  ++ it2;
 
                   // 1000 = 8
                   int instr = 8;
@@ -234,7 +272,8 @@ int main(int argc, char* argv[]){
               else if ( firstLexeme == "jalr")
               {
                   verifyJTypeInstruction(it, it2);
-
+                  ++ it2;
+                  
                   // 1001 = 9
                   int instr = 9;
                   int jumpReg = (*it2)->toInt();
@@ -298,26 +337,7 @@ int main(int argc, char* argv[]){
               else if ( firstLexeme == "beq")
               {
                   verifyITypeInstruction(it, it2);                  
-
-                  int bValue = 0;
-                  if ( (*(it2+5))->getKind() == ASM::ID ) {
-                    bValue = getLabelPositionFromMap(labelMap, (*(it2+5))->getLexeme());
-                    cerr << bValue << " " << lineNum << endl;
-                    bValue = (bValue - lineNum )/4;
-
-                    if (bValue < -32768 || bValue > 32767)
-                      throw string("ERROR! Offset must be in range[-32768, 32767]");
-                  } 
-                  else 
-                  {
-                    bValue = (*(it2+5))->toInt();
-                    cerr << bValue << endl;
-                    if ( 
-                        ((*(it2+5))->getKind()==ASM::INT && (bValue < -32768 || bValue > 32767)) ||
-                        ((*(it2+5))->getKind()==ASM::HEXINT && (bValue > 0xffff))
-                      )
-                      throw string("ERROR! Offset must be in range[-32768, 32767]");
-                  }
+                  int bValue = getBranchOffset(it2, labelMap, lineNum);
 
                   int instr = 4;
                   int sREG = (*(it2+1))->toInt();
@@ -329,24 +349,7 @@ int main(int argc, char* argv[]){
               // bne $s, $t, i
               else if ( firstLexeme == "bne") {
                   verifyITypeInstruction(it, it2);
-
-                  int bValue = 0;
-                  if ( (*(it2+5))->getKind() == ASM::ID ) {
-                    bValue = getLabelPositionFromMap(labelMap, (*(it2+5))->getLexeme());
-                    bValue = (bValue - lineNum)/4;
-
-                    if (bValue < -32768 || bValue > 32767)
-                      throw string("ERROR! Offset must be in range[-32768, 32767]");
-                  } 
-                  else
-                  {
-                    bValue = (*(it2+5))->toInt();
-                    if ( 
-                        ((*(it2+5))->getKind()==ASM::INT && (bValue < -32768 || bValue > 32767)) ||
-                        ((*(it2+5))->getKind()==ASM::HEXINT && (bValue > 0xffff))
-                      )
-                      throw string("ERROR! Offset must be in range[-32768, 32767]");
-                  }
+                  int bValue = getBranchOffset(it2, labelMap, lineNum);
 
                   int instr = 5;
                   int sREG = (*(it2+1))->toInt();
@@ -354,6 +357,72 @@ int main(int argc, char* argv[]){
                   it2 += 5;
 
                   printMipsInstruction( (instr << 26) | (sREG << 21) | (tREG << 16) | (bValue & 0xffff));
+              }
+              else if ( firstLexeme == "lis")
+              {
+                  verifyJTypeInstruction(it, it2);
+                  ++ it2;
+                  
+                  int instr = 20;
+                  int dREG = (*it2)->toInt();
+                  printMipsInstruction ( instr | (dREG << 11));
+              }
+              else if ( firstLexeme == "mflo")
+              {
+                  verifyJTypeInstruction(it, it2);
+                  ++ it2;
+                  
+                  int instr = 18;
+                  int dREG = (*it2)->toInt();
+
+                  printMipsInstruction ( instr | (dREG << 11));
+              }
+              else if ( firstLexeme == "mfhi")
+              {
+                  verifyJTypeInstruction(it, it2);
+                  ++ it2;
+                  
+                  int instr = 16;
+                  int dREG = (*it2)->toInt();
+
+                  printMipsInstruction ( instr | (dREG << 11));
+              }
+              else if ( firstLexeme == "mult" )
+              {
+                  verifyRTypeInstructionTwoParams(it, it2);
+                  
+                  int instr = 24;
+                  int sREG = (*(it2+1))->toInt();
+                  int tREG = (*(it2+3))->toInt();
+                  it2 += 3;
+                  printMipsInstruction( (sREG << 21) | (tREG << 16) | instr );
+              }
+              else if ( firstLexeme == "multu" )
+              {
+                  verifyRTypeInstructionTwoParams(it, it2);
+                  int instr = 25;
+                  int sREG = (*(it2+1))->toInt();
+                  int tREG = (*(it2+3))->toInt();
+                  it2 += 3;
+                  printMipsInstruction( (sREG << 21) | (tREG << 16) | instr );
+              }
+              else if ( firstLexeme == "div" )
+              {
+                  verifyRTypeInstructionTwoParams(it, it2);
+                  int instr = 26;
+                  int sREG = (*(it2+1))->toInt();
+                  int tREG = (*(it2+3))->toInt();
+                  it2 += 3;
+                  printMipsInstruction( (sREG << 21) | (tREG << 16) | instr );
+              }
+              else if ( firstLexeme == "divu" )
+              {
+                  verifyRTypeInstructionTwoParams(it, it2);
+                  int instr = 27;
+                  int sREG = (*(it2+1))->toInt();
+                  int tREG = (*(it2+3))->toInt();
+                  it2 += 3;
+                  printMipsInstruction( (sREG << 21) | (tREG << 16) | instr );
               }
               // not a valid opcode
               else
